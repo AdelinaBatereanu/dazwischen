@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Debug Monitoring</title>
+  <link rel="stylesheet" href="/static/debug/common.css" />
+</head>
+<body data-endpoint="/debug/monitoring">
+  <main>
+    <h1>Debug Monitoring</h1>
+    <p class="subtitle"><code>GET /debug/monitoring</code></p>
+    <nav class="links"><a href="/debug-ui">debug home</a><a href="/sandbox">sandbox</a><a href="/debug/monitoring" target="_blank">raw JSON</a></nav>
+    <section class="card">
+      <div class="controls"><button id="refresh-button" type="button">Refresh</button></div>
+      <div class="output"><pre id="output">Loading…</pre></div>
+    </section>
+  </main>
+  <script src="/static/debug/common.js"></script>
+</body>
+</html>

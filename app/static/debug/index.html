@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dazwischen Debug UI</title>
+  <link rel="stylesheet" href="/static/debug/common.css" />
+</head>
+<body>
+  <main>
+    <h1>Dazwischen Debug UI</h1>
+    <p class="subtitle">Static pages for the debug endpoints.</p>
+
+    <nav class="links">
+      <a href="/sandbox">sandbox</a>
+      <a href="/docs" target="_blank">OpenAPI docs</a>
+    </nav>
+
+    <section class="grid">
+      <a class="card endpoint-card" href="/debug-ui/catalog">
+        <h2>Catalog</h2>
+        <p>Public catalog snapshot.</p>
+        <code>GET /debug/catalog</code>
+      </a>
+      <a class="card endpoint-card" href="/debug-ui/validation-report">
+        <h2>Validation report</h2>
+        <p>Accepted and rejected candidate tool validation details.</p>
+        <code>GET /debug/validation-report</code>
+      </a>
+      <a class="card endpoint-card" href="/debug-ui/monitoring">
+        <h2>Monitoring</h2>
+        <p>Invocation and failure summary.</p>
+        <code>GET /debug/monitoring</code>
+      </a>
+      <a class="card endpoint-card" href="/debug-ui/verticals">
+        <h2>Verticals</h2>
+        <p>Per-vertical validation and runtime summary.</p>
+        <code>GET /debug/verticals</code>
+      </a>
+      <a class="card endpoint-card" href="/debug-ui/recent-failures">
+        <h2>Recent failures</h2>
+        <p>Recent failed invocations, with configurable limit.</p>
+        <code>GET /debug/recent-failures</code>
+      </a>
+      <a class="card endpoint-card" href="/debug-ui/conversations">
+        <h2>Conversations</h2>
+        <p>Conversation-level invocation groups.</p>
+        <code>GET /debug/conversations</code>
+      </a>
+    </section>
+  </main>
+</body>
+</html>

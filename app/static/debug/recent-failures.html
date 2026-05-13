@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Debug Recent Failures</title>
+  <link rel="stylesheet" href="/static/debug/common.css" />
+</head>
+<body data-endpoint="/debug/recent-failures">
+  <main>
+    <h1>Debug Recent Failures</h1>
+    <p class="subtitle"><code>GET /debug/recent-failures</code></p>
+    <nav class="links"><a href="/debug-ui">debug home</a><a href="/sandbox">sandbox</a><a href="/debug/recent-failures" target="_blank">raw JSON</a></nav>
+    <section class="card">
+      <div class="controls">
+        <label>Limit <input data-query-param="limit" type="number" min="1" max="100" value="20" /></label>
+        <button id="refresh-button" type="button">Refresh</button>
+      </div>
+      <div class="output"><pre id="output">Loading…</pre></div>
+    </section>
+  </main>
+  <script src="/static/debug/common.js"></script>
+</body>
+</html>

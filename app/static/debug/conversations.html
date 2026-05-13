@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Debug Conversations</title>
+  <link rel="stylesheet" href="/static/debug/common.css" />
+</head>
+<body data-endpoint="/debug/conversations">
+  <main>
+    <h1>Debug Conversations</h1>
+    <p class="subtitle"><code>GET /debug/conversations</code></p>
+    <nav class="links"><a href="/debug-ui">debug home</a><a href="/sandbox">sandbox</a><a href="/debug/conversations" target="_blank">raw JSON</a></nav>
+    <section class="card">
+      <div class="controls"><button id="refresh-button" type="button">Refresh</button></div>
+      <div class="output"><pre id="output">Loading…</pre></div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <h2>Conversation detail</h2>
+      <p class="subtitle">Fetches <code>GET /debug/conversations/{conversation_id}</code>.</p>
+      <div class="controls">
+        <label>Conversation ID <input id="conversation-id" placeholder="demo-conversation-1" /></label>
+        <button id="detail-button" type="button">Load detail</button>
+      </div>
+      <div class="output"><pre id="detail-output">No conversation selected.</pre></div>
+    </section>
+  </main>
+  <script src="/static/debug/common.js"></script>
+  <script>
+    const conversationInput = document.getElementById("conversation-id");
+    const detailButton = document.getElementById("detail-button");
+    const detailOutput = document.getElementById("detail-output");
+
+    function setDetail(value, isError = false) {
+      detailOutput.classList.toggle("error", isError);
+      detailOutput.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    }
+
+    async function loadDetail() {
+      const id = conversationInput.value.trim();
+      if (!id) {
+        setDetail("Enter a conversation ID first.", true);
+        return;
+      }
+
+      detailButton.disabled = true;
+      setDetail("Loading…");
+      try {
+        const response = await fetch(`/debug/conversations/${encodeURIComponent(id)}`);
+        const payload = await response.json();
+        setDetail(payload, !response.ok);
+      } catch (error) {
+        setDetail(error.message, true);
+      } finally {
+        detailButton.disabled = false;
+      }
+    }
+
+    detailButton.addEventListener("click", loadDetail);
+    conversationInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        loadDetail();
+      }
+    });
+  </script>
+</body>
+</html>

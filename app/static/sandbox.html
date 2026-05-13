@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dazwischen Sandbox</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111827;
+      color: #e5e7eb;
+    }
+
+    body {
+      margin: 0;
+      padding: 32px;
+    }
+
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      margin: 0 0 24px;
+      color: #9ca3af;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(320px, 0.85fr) minmax(360px, 1.15fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .card {
+      border: 1px solid #374151;
+      border-radius: 12px;
+      background: #1f2937;
+      padding: 18px;
+      box-shadow: 0 16px 30px rgb(0 0 0 / 20%);
+    }
+
+    label {
+      display: block;
+      margin: 14px 0 6px;
+      color: #d1d5db;
+      font-weight: 650;
+    }
+
+    select,
+    input,
+    textarea,
+    button {
+      box-sizing: border-box;
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #4b5563;
+      background: #111827;
+      color: #f9fafb;
+      font: inherit;
+    }
+
+    select,
+    input,
+    textarea {
+      padding: 10px 12px;
+    }
+
+    textarea {
+      min-height: 180px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    button {
+      margin-top: 16px;
+      padding: 11px 14px;
+      cursor: pointer;
+      border-color: #2563eb;
+      background: #2563eb;
+      font-weight: 700;
+    }
+
+    button:hover:not(:disabled) {
+      background: #1d4ed8;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .description {
+      color: #d1d5db;
+      line-height: 1.5;
+    }
+
+    .schema,
+    .result {
+      margin-top: 14px;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      background: #0b1220;
+      padding: 12px;
+      max-height: 460px;
+      overflow: auto;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 0 0 22px;
+    }
+
+    .links a {
+      color: #93c5fd;
+      text-decoration: none;
+    }
+
+    .links a:hover {
+      text-decoration: underline;
+    }
+
+    .error {
+      color: #fca5a5;
+    }
+
+    @media (max-width: 820px) {
+      body { padding: 18px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Dazwischen Sandbox</h1>
+    <p class="subtitle">Manual test UI for proxy-routed tool invocation.</p>
+
+    <nav class="links" aria-label="Debug UI links">
+      <a href="/debug-ui">debug home</a>
+      <a href="/debug-ui/catalog">catalog</a>
+      <a href="/debug-ui/validation-report">validation report</a>
+      <a href="/debug-ui/monitoring">monitoring</a>
+      <a href="/debug-ui/verticals">verticals</a>
+      <a href="/debug-ui/conversations">conversations</a>
+      <a href="/debug-ui/recent-failures">recent failures</a>
+      <a href="/health" target="_blank">raw health</a>
+    </nav>
+
+    <section class="grid">
+      <form id="invoke-form" class="card">
+        <label for="tool-select">Tool</label>
+        <select id="tool-select" required></select>
+
+        <label for="conversation-id">Conversation ID <span style="font-weight:400;color:#9ca3af">optional</span></label>
+        <input id="conversation-id" placeholder="demo-conversation-1" />
+
+        <label for="arguments-input">Arguments JSON</label>
+        <textarea id="arguments-input" spellcheck="false">{}</textarea>
+
+        <button id="invoke-button" type="submit">Invoke tool</button>
+      </form>
+
+      <aside class="card">
+        <h2 style="margin-top:0">Selected tool</h2>
+        <p id="tool-description" class="description">Loading tools…</p>
+        <div class="schema"><pre id="tool-schema"></pre></div>
+
+        <h2>Result</h2>
+        <div class="result"><pre id="result-output">No invocation yet.</pre></div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const toolSelect = document.getElementById("tool-select");
+    const description = document.getElementById("tool-description");
+    const schema = document.getElementById("tool-schema");
+    const argsInput = document.getElementById("arguments-input");
+    const conversationId = document.getElementById("conversation-id");
+    const resultOutput = document.getElementById("result-output");
+    const invokeButton = document.getElementById("invoke-button");
+    const form = document.getElementById("invoke-form");
+
+    let tools = [];
+
+    function formatJson(value) {
+      return JSON.stringify(value, null, 2);
+    }
+
+    function setResult(value, isError = false) {
+      resultOutput.classList.toggle("error", isError);
+      resultOutput.textContent = typeof value === "string" ? value : formatJson(value);
+    }
+
+    function selectedTool() {
+      return tools.find((tool) => tool.name === toolSelect.value);
+    }
+
+    function argumentTemplate(toolName) {
+      const templates = {
+        search_mobility_options: {
+          origin: "Munich",
+          destination: "Berlin",
+          date: "2026-06-01",
+          passengers: 1,
+        },
+        compare_internet_plans: {
+          address: "Main Street 1",
+          postal_code: "80331",
+          desired_speed_mbps: 100,
+        },
+        compare_insurance_offers: {
+          product_type: "travel",
+          coverage_amount_eur: 10000,
+          customer_age: 35,
+        },
+      };
+      return templates[toolName] || {};
+    }
+
+    function refreshSelectedTool() {
+      const tool = selectedTool();
+      if (!tool) {
+        description.textContent = "No tool selected.";
+        schema.textContent = "";
+        argsInput.value = "{}";
+        return;
+      }
+      description.textContent = tool.description;
+      schema.textContent = formatJson(tool.input_schema);
+      argsInput.value = formatJson(argumentTemplate(tool.name));
+    }
+
+    async function loadTools() {
+      invokeButton.disabled = true;
+      try {
+        const response = await fetch("/debug/sandbox/tools");
+        if (!response.ok) {
+          throw new Error(`Failed to load tools: HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        tools = payload.tools || [];
+        toolSelect.innerHTML = "";
+
+        for (const tool of tools) {
+          const option = document.createElement("option");
+          option.value = tool.name;
+          option.textContent = tool.name;
+          toolSelect.appendChild(option);
+        }
+
+        if (tools.length === 0) {
+          description.textContent = "No sandbox tools are available.";
+          schema.textContent = "";
+        } else {
+          refreshSelectedTool();
+        }
+      } catch (error) {
+        setResult(error.message, true);
+        description.textContent = "Could not load tools.";
+      } finally {
+        invokeButton.disabled = tools.length === 0;
+      }
+    }
+
+    toolSelect.addEventListener("change", refreshSelectedTool);
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const tool = selectedTool();
+      if (!tool) return;
+
+      let parsedArguments;
+      try {
+        parsedArguments = JSON.parse(argsInput.value || "{}");
+      } catch (error) {
+        setResult(`Invalid JSON arguments: ${error.message}`, true);
+        return;
+      }
+
+      invokeButton.disabled = true;
+      setResult("Invoking…");
+      try {
+        const body = {
+          tool_name: tool.name,
+          arguments: parsedArguments,
+        };
+        if (conversationId.value.trim()) {
+          body.conversation_id = conversationId.value.trim();
+        }
+
+        const response = await fetch("/debug/sandbox/invoke", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(formatJson(payload));
+        }
+        setResult(payload);
+      } catch (error) {
+        setResult(error.message, true);
+      } finally {
+        invokeButton.disabled = false;
+      }
+    });
+
+    loadTools();
+  </script>
+</body>
+</html>
