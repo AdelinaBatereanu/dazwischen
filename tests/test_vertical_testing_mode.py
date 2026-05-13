@@ -1,5 +1,3 @@
-"""Tests for Phase 5 vertical-filtered catalog listing."""
-
 from app.catalog.builder import CatalogBuilder
 from app.catalog.registry import CatalogRegistry
 from app.catalog.versioning import CatalogVersionProvider

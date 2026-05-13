@@ -1,5 +1,3 @@
-"""Tests for the Phase 6 routing layer."""
-
 from typing import Any
 
 import pytest

@@ -1,5 +1,3 @@
-"""Tests for the Phase 5 catalog layer."""
-
 from typing import Any
 
 from app.catalog.builder import ApprovedPublicMapping, CatalogBuilder

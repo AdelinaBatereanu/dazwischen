@@ -1,5 +1,3 @@
-"""Tests for the Phase 4 validation/conformance layer."""
-
 from app.models.tools import CandidateTool
 from app.models.validation import ToolValidationStatus
 from app.validation.conformance import ToolConformanceValidator
