@@ -130,3 +130,36 @@ def _extract_vertical_filter(scope: dict[str, Any]) -> str | None:
 
     vertical = values[0].strip().lower()
     return vertical or None
+
+
+def _to_mcp_tool(tool: PublicTool) -> types.Tool:
+    return types.Tool(
+        name=tool.name,
+        description=tool.description,
+        inputSchema=tool.input_schema,
+    )
+
+
+def _to_call_tool_result(result: ToolResult) -> types.CallToolResult:
+    if result.ok:
+        data = result.data or {}
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=json.dumps(data, indent=2))],
+            structuredContent=data,
+            isError=False,
+        )
+
+    error = result.error.model_dump(mode="json") if result.error is not None else _unknown_error()
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=json.dumps(error, indent=2))],
+        structuredContent={"error": error},
+        isError=True,
+    )
+
+
+def _unknown_error() -> dict[str, Any]:
+    return {
+        "code": "UPSTREAM_ERROR",
+        "message": "The tool call failed.",
+        "details": {},
+    }
