@@ -1,4 +1,7 @@
-from collections.abc import Sequence
+"""FastAPI application composition for the ChatGPT-facing MCP proxy."""
+
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
@@ -33,16 +36,23 @@ def create_app() -> FastAPI:
     verticals = create_verticals()
     catalog = create_catalog_registry(verticals)
     router = ToolRouter(catalog=catalog, verticals=verticals)
+    mcp_app = create_mcp_app(catalog=catalog, router=router)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        async with mcp_app.state.session_manager.run():
+            yield
 
     app = FastAPI(
         title="Dazwischen MCP Proxy",
         description="Single ChatGPT-facing MCP proxy over mocked internal vertical services.",
         version=catalog.get_snapshot().metadata.proxy_version,
+        lifespan=lifespan,
     )
     app.state.verticals = verticals
     app.state.catalog = catalog
     app.state.router = router
-    app.mount("/v1", create_mcp_app(catalog=catalog, router=router))
+    app.mount("/v1", mcp_app)
 
     @app.get("/health")
     def health() -> dict[str, Any]:

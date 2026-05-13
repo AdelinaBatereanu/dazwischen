@@ -49,10 +49,9 @@ def create_mcp_app(catalog: CatalogRegistry, router: ToolRouter) -> Starlette:
     )
     endpoint = VerticalFilterASGIMiddleware(StreamableHTTPASGIApp(session_manager))
 
-    return Starlette(
-        routes=[Route("/mcp", endpoint=endpoint)],
-        lifespan=lambda app: session_manager.run(),
-    )
+    app = Starlette(routes=[Route("/mcp", endpoint=endpoint)])
+    app.state.session_manager = session_manager
+    return app
 
 
 def create_mcp_server(catalog: CatalogRegistry, router: ToolRouter) -> Server:
