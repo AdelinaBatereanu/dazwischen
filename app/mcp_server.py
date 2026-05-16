@@ -92,7 +92,7 @@ def create_mcp_server(catalog: CatalogRegistry, router: ToolRouter) -> Server:
         if vertical_filter is not None and (route is None or route.vertical != vertical_filter):
             result = tool_not_found(name)
         else:
-            result = router.invoke(
+            result = await router.invoke(
                 name,
                 arguments,
                 request_id=_REQUEST_ID.get(),
