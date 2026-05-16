@@ -1,9 +1,12 @@
+import asyncio
+
 from app.models.tools import CandidateTool
 from app.models.validation import ToolValidationStatus
 from app.validation.conformance import ToolConformanceValidator
-from app.verticals.insurance import InsuranceVertical
-from app.verticals.internet import InternetVertical
-from app.verticals.mobility import MobilityVertical
+from app.vertical_mcp.adapters import InProcessVerticalMCPClient, list_candidate_tools
+from app.vertical_mcp.insurance import create_insurance_server
+from app.vertical_mcp.internet import create_internet_server
+from app.vertical_mcp.mobility import create_mobility_server
 
 
 def valid_candidate(**overrides: object) -> CandidateTool:
@@ -43,11 +46,14 @@ def test_valid_candidate_is_accepted() -> None:
 
 
 def test_current_vertical_candidates_validate_as_three_accepted_and_five_rejected() -> None:
-    candidates = [
-        *MobilityVertical().list_tools(),
-        *InternetVertical().list_tools(),
-        *InsuranceVertical().list_tools(),
+    clients = [
+        InProcessVerticalMCPClient("mobility", create_mobility_server()),
+        InProcessVerticalMCPClient("internet", create_internet_server()),
+        InProcessVerticalMCPClient("insurance", create_insurance_server()),
     ]
+    candidates = []
+    for client in clients:
+        candidates.extend(asyncio.run(list_candidate_tools(client)))
 
     report = ToolConformanceValidator().validate_all(candidates)
 

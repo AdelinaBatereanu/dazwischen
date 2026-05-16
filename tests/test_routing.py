@@ -1,60 +1,53 @@
 from typing import Any
 
 import pytest
+from mcp import types
 
 from app.catalog.builder import CatalogBuilder
 from app.catalog.registry import CatalogRegistry
 from app.catalog.versioning import CatalogVersionProvider
-from app.models.tools import CandidateTool
 from app.models.results import ToolResult
+from app.models.tools import CandidateTool
 from app.routing.errors import RoutingErrorCode
 from app.routing.router import ToolRouter
 from app.validation.conformance import ToolConformanceValidator
-from app.verticals.base import VerticalService
-from app.verticals.mobility import MobilityVertical
+from app.vertical_mcp.adapters import InProcessVerticalMCPClient, list_candidate_tools
+from app.vertical_mcp.mobility import create_mobility_server
 
 
-class StubVertical:
-    """Routing test double with configurable invocation behavior."""
+class StubMCPClient:
+    """Routing test double with configurable MCP invocation behavior."""
 
     def __init__(
         self,
         *,
         name: str = "mobility",
-        candidates: list[CandidateTool] | None = None,
         response: Any | None = None,
         exception: Exception | None = None,
     ) -> None:
         self.name = name
-        self._candidates = candidates if candidates is not None else MobilityVertical().list_tools()
         self._response = {"stub": "ok"} if response is None else response
         self._exception = exception
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    def list_tools(self) -> list[CandidateTool]:
-        return self._candidates
+    async def list_tools(self) -> list[types.Tool]:
+        return []
 
-    def invoke(self, tool_name: str, arguments: dict[str, Any]) -> Any:
+    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> types.CallToolResult:
         self.calls.append((tool_name, arguments))
         if self._exception is not None:
             raise self._exception
-        return self._response
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text="{}")],
+            structuredContent=self._response if isinstance(self._response, dict) else None,
+            isError=False,
+        )
 
+    async def list_resources(self) -> list[types.Resource]:
+        return []
 
-def build_registry(verticals: list[VerticalService] | None = None) -> CatalogRegistry:
-    snapshot = CatalogBuilder(
-        validator=ToolConformanceValidator(),
-        version_provider=CatalogVersionProvider(),
-    ).build(verticals or [MobilityVertical()])
-    return CatalogRegistry(snapshot)
-
-
-def assert_error(result: ToolResult, code: RoutingErrorCode) -> None:
-    assert result.ok is False
-    assert result.data is None
-    assert result.error is not None
-    assert result.error.code == code.value
-    assert result.error.message
+    async def read_resource(self, uri: str) -> list[types.ResourceContents]:
+        return []
 
 
 def valid_mobility_args(**overrides: object) -> dict[str, Any]:
@@ -67,19 +60,41 @@ def valid_mobility_args(**overrides: object) -> dict[str, Any]:
     return args
 
 
-def test_public_tool_routes_to_correct_vertical_and_upstream_tool() -> None:
-    vertical = StubVertical(response={"vertical": "mobility", "options": []})
-    router = ToolRouter(build_registry([vertical]), [vertical])
+async def build_registry(candidates: list[CandidateTool] | None = None) -> CatalogRegistry:
+    if candidates is None:
+        candidates = await list_candidate_tools(
+            InProcessVerticalMCPClient("mobility", create_mobility_server())
+        )
+    snapshot = CatalogBuilder(
+        validator=ToolConformanceValidator(),
+        version_provider=CatalogVersionProvider(),
+    ).build_from_candidates(candidates)
+    return CatalogRegistry(snapshot)
+
+
+def assert_error(result: ToolResult, code: RoutingErrorCode) -> None:
+    assert result.ok is False
+    assert result.data is None
+    assert result.error is not None
+    assert result.error.code == code.value
+    assert result.error.message
+
+
+@pytest.mark.anyio
+async def test_public_tool_routes_to_correct_vertical_and_upstream_tool() -> None:
+    client = StubMCPClient(response={"vertical": "mobility", "options": []})
+    router = ToolRouter(await build_registry(), [client])
     arguments = valid_mobility_args(passengers=2)
 
-    result = router.invoke("search_mobility_options", arguments, request_id="req-123")
+    result = await router.invoke("search_mobility_options", arguments, request_id="req-123")
 
     assert result.ok is True
     assert result.error is None
     assert result.data == {"vertical": "mobility", "options": []}
-    assert vertical.calls == [("search", arguments)]
+    assert client.calls == [("search", arguments)]
 
 
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "arguments",
     [
@@ -89,55 +104,58 @@ def test_public_tool_routes_to_correct_vertical_and_upstream_tool() -> None:
         ["not", "an", "object"],
     ],
 )
-def test_invalid_arguments_return_invalid_arguments_without_calling_vertical(arguments: Any) -> None:
-    vertical = StubVertical()
-    router = ToolRouter(build_registry([vertical]), [vertical])
+async def test_invalid_arguments_return_invalid_arguments_without_calling_vertical(arguments: Any) -> None:
+    client = StubMCPClient()
+    router = ToolRouter(await build_registry(), [client])
 
-    result = router.invoke("search_mobility_options", arguments)
+    result = await router.invoke("search_mobility_options", arguments)
 
     assert_error(result, RoutingErrorCode.INVALID_ARGUMENTS)
     assert result.error is not None
     assert result.error.details
-    assert vertical.calls == []
+    assert client.calls == []
 
 
-def test_unknown_public_tool_returns_tool_not_found() -> None:
-    vertical = StubVertical()
-    router = ToolRouter(build_registry([vertical]), [vertical])
+@pytest.mark.anyio
+async def test_unknown_public_tool_returns_tool_not_found() -> None:
+    client = StubMCPClient()
+    router = ToolRouter(await build_registry(), [client])
 
-    result = router.invoke("book", {"option_id": "mob-train-001"})
+    result = await router.invoke("book", {"option_id": "mob-train-001"})
 
     assert_error(result, RoutingErrorCode.TOOL_NOT_FOUND)
     assert result.error is not None
     assert result.error.details == {"tool": "book"}
-    assert vertical.calls == []
+    assert client.calls == []
 
 
-def test_missing_configured_vertical_returns_vertical_unavailable() -> None:
-    registry = build_registry([MobilityVertical()])
-    router = ToolRouter(registry, [])
+@pytest.mark.anyio
+async def test_missing_configured_vertical_returns_vertical_unavailable() -> None:
+    router = ToolRouter(await build_registry(), [])
 
-    result = router.invoke("search_mobility_options", valid_mobility_args())
+    result = await router.invoke("search_mobility_options", valid_mobility_args())
 
     assert_error(result, RoutingErrorCode.VERTICAL_UNAVAILABLE)
 
 
-def test_upstream_timeout_returns_safe_timeout_error() -> None:
-    vertical = StubVertical(exception=TimeoutError("private upstream timeout details"))
-    router = ToolRouter(build_registry([vertical]), [vertical])
+@pytest.mark.anyio
+async def test_upstream_timeout_returns_safe_timeout_error() -> None:
+    client = StubMCPClient(exception=TimeoutError("private upstream timeout details"))
+    router = ToolRouter(await build_registry(), [client])
 
-    result = router.invoke("search_mobility_options", valid_mobility_args())
+    result = await router.invoke("search_mobility_options", valid_mobility_args())
 
     assert_error(result, RoutingErrorCode.UPSTREAM_TIMEOUT)
     assert result.error is not None
     assert "private upstream timeout details" not in result.error.message
 
 
-def test_upstream_exception_returns_safe_error_without_leaking_exception_details() -> None:
-    vertical = StubVertical(exception=RuntimeError("secret hostname db-01 failed"))
-    router = ToolRouter(build_registry([vertical]), [vertical])
+@pytest.mark.anyio
+async def test_upstream_exception_returns_safe_error_without_leaking_exception_details() -> None:
+    client = StubMCPClient(exception=RuntimeError("secret hostname db-01 failed"))
+    router = ToolRouter(await build_registry(), [client])
 
-    result = router.invoke("search_mobility_options", valid_mobility_args())
+    result = await router.invoke("search_mobility_options", valid_mobility_args())
 
     assert_error(result, RoutingErrorCode.UPSTREAM_ERROR)
     assert result.error is not None
@@ -145,40 +163,40 @@ def test_upstream_exception_returns_safe_error_without_leaking_exception_details
     assert "secret hostname db-01 failed" not in str(dumped_error)
 
 
-@pytest.mark.parametrize(
-    "malformed_response",
-    [
-        ["not", "a", "dict"],
-        {"not_json_serializable": {"set-values"}},
-    ],
-)
-def test_malformed_upstream_response_returns_malformed_response_error(
+@pytest.mark.anyio
+@pytest.mark.parametrize("malformed_response", [["not", "a", "dict"], {"not_json_serializable": {"set-values"}}])
+async def test_malformed_upstream_response_returns_malformed_response_error(
     malformed_response: Any,
 ) -> None:
-    vertical = StubVertical(response=malformed_response)
-    router = ToolRouter(build_registry([vertical]), [vertical])
+    client = StubMCPClient(response=malformed_response)
+    router = ToolRouter(await build_registry(), [client])
 
-    result = router.invoke("search_mobility_options", valid_mobility_args())
+    result = await router.invoke("search_mobility_options", valid_mobility_args())
 
-    assert_error(result, RoutingErrorCode.MALFORMED_UPSTREAM_RESPONSE)
+    if isinstance(malformed_response, dict):
+        assert_error(result, RoutingErrorCode.MALFORMED_UPSTREAM_RESPONSE)
+    else:
+        assert_error(result, RoutingErrorCode.MALFORMED_UPSTREAM_RESPONSE)
 
 
-def test_missing_catalog_route_returns_safe_upstream_error() -> None:
-    registry = build_registry([MobilityVertical()])
+@pytest.mark.anyio
+async def test_missing_catalog_route_returns_safe_upstream_error() -> None:
+    registry = await build_registry()
     snapshot = registry.get_snapshot().model_copy(update={"routes": {}})
-    router = ToolRouter(CatalogRegistry(snapshot), [MobilityVertical()])
+    router = ToolRouter(CatalogRegistry(snapshot), [StubMCPClient()])
 
-    result = router.invoke("search_mobility_options", valid_mobility_args())
+    result = await router.invoke("search_mobility_options", valid_mobility_args())
 
     assert_error(result, RoutingErrorCode.UPSTREAM_ERROR)
 
 
-def test_successful_invocation_logs_safe_routing_fields(caplog: pytest.LogCaptureFixture) -> None:
-    vertical = StubVertical(response={"ok": True})
-    router = ToolRouter(build_registry([vertical]), [vertical])
+@pytest.mark.anyio
+async def test_successful_invocation_logs_safe_routing_fields(caplog: pytest.LogCaptureFixture) -> None:
+    client = StubMCPClient(response={"ok": True})
+    router = ToolRouter(await build_registry(), [client])
 
     with caplog.at_level("INFO", logger="app.routing.router"):
-        router.invoke("search_mobility_options", valid_mobility_args(), request_id="req-log")
+        await router.invoke("search_mobility_options", valid_mobility_args(), request_id="req-log")
 
     log_text = caplog.text
     assert "request_id=req-log" in log_text

@@ -1,14 +1,18 @@
-"""Tests for Phase 8 observability and sandbox behavior."""
-
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app, create_catalog_registry
+from app.catalog.builder import CatalogBuilder
+from app.catalog.registry import CatalogRegistry
+from app.catalog.versioning import CatalogVersionProvider
+from app.main import create_app
 from app.models.observability import InvocationSource
 from app.observability.store import ObservabilityStore
 from app.routing.router import ToolRouter
-from app.verticals.mobility import MobilityVertical
+from app.validation.conformance import ToolConformanceValidator
+from app.vertical_mcp.adapters import InProcessVerticalMCPClient
+from app.vertical_mcp.mobility import create_mobility_server
 
 
 def valid_mobility_args(**overrides: object) -> dict[str, Any]:
@@ -21,13 +25,18 @@ def valid_mobility_args(**overrides: object) -> dict[str, Any]:
     return args
 
 
-def test_router_successful_tool_call_records_observability_event() -> None:
-    vertical = MobilityVertical()
-    catalog = create_catalog_registry([vertical])
+@pytest.mark.anyio
+async def test_router_successful_tool_call_records_observability_event() -> None:
+    client = InProcessVerticalMCPClient("mobility", create_mobility_server())
+    snapshot = await CatalogBuilder(
+        validator=ToolConformanceValidator(),
+        version_provider=CatalogVersionProvider(),
+    ).build_from_mcp_clients([client])
+    catalog = CatalogRegistry(snapshot)
     observability = ObservabilityStore()
-    router = ToolRouter(catalog=catalog, verticals=[vertical], observability=observability)
+    router = ToolRouter(catalog=catalog, vertical_mcp_clients=[client], observability=observability)
 
-    result = router.invoke(
+    result = await router.invoke(
         "search_mobility_options",
         valid_mobility_args(),
         request_id="req-1",
@@ -48,13 +57,18 @@ def test_router_successful_tool_call_records_observability_event() -> None:
     assert event.error_code is None
 
 
-def test_router_failed_tool_call_records_safe_error_code() -> None:
-    vertical = MobilityVertical()
-    catalog = create_catalog_registry([vertical])
+@pytest.mark.anyio
+async def test_router_failed_tool_call_records_safe_error_code() -> None:
+    client = InProcessVerticalMCPClient("mobility", create_mobility_server())
+    snapshot = await CatalogBuilder(
+        validator=ToolConformanceValidator(),
+        version_provider=CatalogVersionProvider(),
+    ).build_from_mcp_clients([client])
+    catalog = CatalogRegistry(snapshot)
     observability = ObservabilityStore()
-    router = ToolRouter(catalog=catalog, verticals=[vertical], observability=observability)
+    router = ToolRouter(catalog=catalog, vertical_mcp_clients=[client], observability=observability)
 
-    result = router.invoke(
+    result = await router.invoke(
         "search_mobility_options",
         {"origin": "Munich"},
         request_id="req-bad",

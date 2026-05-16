@@ -1,4 +1,4 @@
-from typing import Any
+import asyncio
 
 from app.catalog.builder import ApprovedPublicMapping, CatalogBuilder
 from app.catalog.registry import CatalogRegistry
@@ -6,23 +6,14 @@ from app.catalog.versioning import CatalogVersionProvider
 from app.models.tools import CandidateTool
 from app.models.validation import ToolValidationStatus
 from app.validation.conformance import ToolConformanceValidator
-from app.verticals.insurance import InsuranceVertical
-from app.verticals.internet import InternetVertical
-from app.verticals.mobility import MobilityVertical
+from app.vertical_mcp.adapters import InProcessVerticalMCPClient
+from app.vertical_mcp.insurance import create_insurance_server
+from app.vertical_mcp.internet import create_internet_server
+from app.vertical_mcp.mobility import create_mobility_server
 
 
-class StubVertical:
-    """Small vertical test double returning fixed candidate tools."""
-
-    def __init__(self, name: str, candidates: list[CandidateTool]) -> None:
-        self.name = name
-        self._candidates = candidates
-
-    def list_tools(self) -> list[CandidateTool]:
-        return self._candidates
-
-    def invoke(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        return {"tool_name": tool_name, "arguments": arguments}
+def run_async[T](awaitable: object) -> T:
+    return asyncio.run(awaitable)  # type: ignore[arg-type, return-value]
 
 
 def valid_candidate(**overrides: object) -> CandidateTool:
@@ -46,16 +37,26 @@ def valid_candidate(**overrides: object) -> CandidateTool:
     return CandidateTool(**data)
 
 
-def build_registry(*verticals: StubVertical | MobilityVertical | InternetVertical | InsuranceVertical) -> CatalogRegistry:
-    snapshot = CatalogBuilder(
+def builder(**kwargs: object) -> CatalogBuilder:
+    return CatalogBuilder(
         validator=ToolConformanceValidator(),
         version_provider=CatalogVersionProvider(),
-    ).build(verticals)
+        **kwargs,
+    )
+
+
+def build_registry() -> CatalogRegistry:
+    clients = [
+        InProcessVerticalMCPClient("mobility", create_mobility_server()),
+        InProcessVerticalMCPClient("internet", create_internet_server()),
+        InProcessVerticalMCPClient("insurance", create_insurance_server()),
+    ]
+    snapshot = run_async(builder().build_from_mcp_clients(clients))
     return CatalogRegistry(snapshot)
 
 
 def test_catalog_exposes_only_curated_public_tools() -> None:
-    registry = build_registry(MobilityVertical(), InternetVertical(), InsuranceVertical())
+    registry = build_registry()
 
     public_names = {tool.name for tool in registry.list_tools()}
 
@@ -72,7 +73,7 @@ def test_catalog_exposes_only_curated_public_tools() -> None:
 
 
 def test_catalog_routes_public_tools_to_deterministic_internal_versions() -> None:
-    registry = build_registry(MobilityVertical(), InternetVertical(), InsuranceVertical())
+    registry = build_registry()
 
     mobility_route = registry.get_route("search_mobility_options")
     internet_route = registry.get_route("compare_internet_plans")
@@ -94,7 +95,7 @@ def test_catalog_routes_public_tools_to_deterministic_internal_versions() -> Non
 
 
 def test_registry_lookup_and_snapshot_version_metadata_are_available() -> None:
-    registry = build_registry(MobilityVertical(), InternetVertical(), InsuranceVertical())
+    registry = build_registry()
 
     tool = registry.get_tool("compare_internet_plans")
     snapshot = registry.get_snapshot()
@@ -110,7 +111,7 @@ def test_registry_lookup_and_snapshot_version_metadata_are_available() -> None:
 
 
 def test_validation_report_keeps_accepted_and_rejected_catalog_decisions() -> None:
-    registry = build_registry(MobilityVertical(), InternetVertical(), InsuranceVertical())
+    registry = build_registry()
 
     report = registry.get_validation_report()
     assert report is not None
@@ -134,7 +135,8 @@ def test_validation_report_keeps_accepted_and_rejected_catalog_decisions() -> No
 
 def test_valid_candidate_without_approved_mapping_is_rejected_from_public_catalog() -> None:
     candidate = valid_candidate(upstream_tool="search_v2", internal_version="2.0")
-    registry = build_registry(StubVertical("mobility", [candidate]))
+    snapshot = builder().build_from_candidates([candidate])
+    registry = CatalogRegistry(snapshot)
 
     report = registry.get_validation_report()
     assert registry.list_tools() == []
@@ -162,11 +164,7 @@ def test_duplicate_proxy_owned_public_mapping_is_rejected() -> None:
         ),
     }
 
-    snapshot = CatalogBuilder(
-        validator=ToolConformanceValidator(),
-        version_provider=CatalogVersionProvider(),
-        approved_mappings=mappings,
-    ).build([StubVertical("test", [first, second])])
+    snapshot = builder(approved_mappings=mappings).build_from_candidates([first, second])
     registry = CatalogRegistry(snapshot)
 
     assert [tool.name for tool in registry.list_tools()] == ["duplicate_public_name"]

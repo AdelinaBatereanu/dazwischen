@@ -5,7 +5,11 @@ from fastapi.testclient import TestClient
 from mcp import types
 
 from app.catalog.registry import CatalogRegistry
-from app.main import create_app, create_catalog_registry, create_verticals
+from app.main import (
+    create_app,
+    create_catalog_registry_from_mcp_clients,
+    create_vertical_mcp_clients,
+)
 from app.mcp_server import _VERTICAL_FILTER, create_mcp_server
 from app.routing.router import ToolRouter
 
@@ -15,9 +19,9 @@ def run_async[T](awaitable: Any) -> T:
 
 
 def create_server() -> Any:
-    verticals = create_verticals()
-    catalog = create_catalog_registry(verticals)
-    router = ToolRouter(catalog=catalog, verticals=verticals)
+    vertical_mcp_clients = create_vertical_mcp_clients()
+    catalog = run_async(create_catalog_registry_from_mcp_clients(vertical_mcp_clients))
+    router = ToolRouter(catalog=catalog, vertical_mcp_clients=vertical_mcp_clients)
     return create_mcp_server(catalog=catalog, router=router)
 
 
@@ -39,11 +43,14 @@ def call_mcp_tool(server: Any, name: str, arguments: dict[str, Any]) -> types.Ca
 def test_fastapi_app_composes_runtime_components_and_debug_endpoints() -> None:
     app = create_app()
 
-    assert isinstance(app.state.catalog, CatalogRegistry)
-    assert isinstance(app.state.router, ToolRouter)
-    assert {vertical.name for vertical in app.state.verticals} == {"mobility", "internet", "insurance"}
-
     with TestClient(app) as client:
+        assert isinstance(app.state.catalog, CatalogRegistry)
+        assert isinstance(app.state.router, ToolRouter)
+        assert {client.name for client in app.state.vertical_mcp_clients} == {
+            "mobility",
+            "internet",
+            "insurance",
+        }
         health = client.get("/health")
         catalog = client.get("/debug/catalog")
         report = client.get("/debug/validation-report")
@@ -70,6 +77,53 @@ def test_fastapi_app_composes_runtime_components_and_debug_endpoints() -> None:
     statuses = {(entry["vertical"], entry["tool"]): entry["status"] for entry in report_body["results"]}
     assert statuses[("mobility", "search")] == "accepted"
     assert statuses[("mobility", "book")] == "rejected"
+
+
+def test_internal_vertical_mcp_servers_are_not_publicly_mounted() -> None:
+    app = create_app()
+
+    with TestClient(app) as client:
+        mounted_paths = {getattr(route, "path", None) for route in app.routes}
+
+        assert "/v1" in mounted_paths
+        assert "/mobility" not in mounted_paths
+        assert "/internet" not in mounted_paths
+        assert "/insurance" not in mounted_paths
+        assert "/verticals" not in mounted_paths
+        assert client.get("/mobility/mcp").status_code == 404
+        assert client.get("/internet/mcp").status_code == 404
+        assert client.get("/insurance/mcp").status_code == 404
+
+
+def test_debug_vertical_resources_expose_internal_mcp_resources() -> None:
+    app = create_app()
+
+    with TestClient(app) as client:
+        resources = client.get("/debug/vertical-resources")
+        manifest = client.get("/debug/vertical-resources/mobility/manifest")
+
+    assert resources.status_code == 200
+    resources_body = resources.json()
+    assert {entry["vertical"] for entry in resources_body["verticals"]} == {
+        "mobility",
+        "internet",
+        "insurance",
+    }
+    mobility_resources = next(
+        entry["resources"]
+        for entry in resources_body["verticals"]
+        if entry["vertical"] == "mobility"
+    )
+    assert {resource["uri"] for resource in mobility_resources} == {
+        "vertical://mobility/manifest",
+        "vertical://mobility/rejection-guidance",
+    }
+
+    assert manifest.status_code == 200
+    manifest_body = manifest.json()
+    assert manifest_body["vertical"] == "mobility"
+    assert manifest_body["uri"] == "vertical://mobility/manifest"
+    assert manifest_body["contents"][0]["mimeType"] == "application/json"
 
 
 def test_mcp_adapter_lists_only_curated_public_tools() -> None:
