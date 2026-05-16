@@ -1,4 +1,4 @@
-"""Deterministic safe routing from public tools to internal vertical services."""
+"""Deterministic safe routing from public tools to internal vertical MCP providers."""
 
 import json
 import logging
@@ -22,25 +22,25 @@ from app.routing.errors import (
     upstream_timeout,
     vertical_unavailable,
 )
-from app.verticals.base import VerticalService
+from app.vertical_mcp.base import VerticalMCPClient
 
 logger = logging.getLogger(__name__)
 
 
 class ToolRouter:
-    """Route accepted public tool calls to the correct internal vertical."""
+    """Route accepted public tool calls to the correct internal MCP vertical."""
 
     def __init__(
         self,
         catalog: CatalogRegistry,
-        verticals: Sequence[VerticalService],
+        vertical_mcp_clients: Sequence[VerticalMCPClient],
         observability: ObservabilityStore | None = None,
     ) -> None:
         self._catalog = catalog
-        self._verticals_by_name = {vertical.name: vertical for vertical in verticals}
+        self._vertical_mcp_clients_by_name = {client.name: client for client in vertical_mcp_clients}
         self._observability = observability
 
-    def invoke(
+    async def invoke(
         self,
         public_tool_name: str,
         arguments: dict[str, Any],
@@ -48,7 +48,7 @@ class ToolRouter:
         conversation_id: str | None = None,
         source: InvocationSource = InvocationSource.MCP,
     ) -> ToolResult:
-        """Invoke a public tool through its catalog route and return a safe result."""
+        """Invoke a public tool through its route using internal MCP vertical clients."""
         started_at = time.perf_counter()
         public_tool = self._catalog.get_tool(public_tool_name)
         if public_tool is None:
@@ -88,8 +88,8 @@ class ToolRouter:
             )
             return argument_error
 
-        vertical = self._verticals_by_name.get(route.vertical)
-        if vertical is None:
+        vertical_client = self._vertical_mcp_clients_by_name.get(route.vertical)
+        if vertical_client is None:
             logger.error(
                 "Configured vertical unavailable request_id=%s public_tool=%s vertical=%s "
                 "safe_error_code=VERTICAL_UNAVAILABLE",
@@ -104,7 +104,8 @@ class ToolRouter:
             return result
 
         try:
-            raw_response = vertical.invoke(route.upstream_tool, arguments)
+            call_result = await vertical_client.call_tool(route.upstream_tool, arguments)
+            raw_response = _extract_mcp_response(call_result)
         except TimeoutError:
             logger.warning(
                 "Upstream timeout request_id=%s public_tool=%s vertical=%s upstream_tool=%s "
@@ -210,10 +211,18 @@ class ToolRouter:
 
 def _validation_error_details(exc: ValidationError) -> dict[str, Any]:
     path = ".".join(str(part) for part in exc.path)
-    return {
-        "reason": exc.message,
-        "path": path or None,
-    }
+    return {"reason": exc.message, "path": path or None}
+
+
+def _extract_mcp_response(call_result: Any) -> dict[str, Any] | None:
+    if getattr(call_result, "isError", False):
+        raise RuntimeError("Internal MCP tool returned an error result.")
+
+    structured_content = getattr(call_result, "structuredContent", None)
+    if isinstance(structured_content, dict):
+        return structured_content
+
+    return None
 
 
 def _is_normalizable_response(response: Any) -> bool:
