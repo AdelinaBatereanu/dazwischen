@@ -34,6 +34,10 @@ def create_ui_router(static_dir: Path) -> APIRouter:
     def debug_ui_verticals() -> FileResponse:
         return FileResponse(static_dir / "debug" / "verticals.html")
 
+    @router.get("/debug-ui/vertical-resources")
+    def debug_ui_vertical_resources() -> FileResponse:
+        return FileResponse(static_dir / "debug" / "vertical-resources.html")
+
     @router.get("/debug-ui/recent-failures")
     def debug_ui_recent_failures() -> FileResponse:
         return FileResponse(static_dir / "debug" / "recent-failures.html")

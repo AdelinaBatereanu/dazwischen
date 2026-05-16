@@ -11,7 +11,7 @@ from app.models.observability import InvocationSource
 from app.observability.store import ObservabilityStore
 from app.routing.errors import tool_not_found
 from app.routing.router import ToolRouter
-from app.verticals.base import VerticalService
+from app.vertical_mcp.base import VerticalMCPClient
 
 
 class SandboxInvokeRequest(BaseModel):
@@ -35,7 +35,7 @@ def create_debug_router(
     catalog: CatalogRegistry,
     observability: ObservabilityStore,
     router: ToolRouter,
-    verticals: list[VerticalService],
+    vertical_mcp_clients: list[VerticalMCPClient],
 ) -> APIRouter:
     """Create debug and sandbox routes."""
     api_router = APIRouter()
@@ -60,7 +60,7 @@ def create_debug_router(
         summaries = observability.vertical_summary(
             catalog=catalog,
             validation_report=catalog.get_validation_report(),
-            vertical_names=[vertical.name for vertical in verticals],
+            vertical_names=[client.name for client in vertical_mcp_clients],
         )
         return {"verticals": [summary.model_dump(mode="json") for summary in summaries]}
 
@@ -88,14 +88,48 @@ def create_debug_router(
         tools = catalog.list_tools(vertical_filter=vertical)
         return {"tools": [tool.model_dump(mode="json") for tool in tools]}
 
+    @api_router.get("/debug/vertical-resources")
+    async def debug_vertical_resources(vertical: str | None = None) -> dict[str, Any]:
+        selected_clients = _filter_vertical_clients(vertical_mcp_clients, vertical)
+        return {
+            "verticals": [
+                {
+                    "vertical": client.name,
+                    "resources": [
+                        resource.model_dump(mode="json")
+                        for resource in await client.list_resources()
+                    ],
+                }
+                for client in selected_clients
+            ]
+        }
+
+    @api_router.get("/debug/vertical-resources/{vertical}/{resource_name}")
+    async def debug_vertical_resource(vertical: str, resource_name: str) -> dict[str, Any]:
+        client = _get_vertical_client(vertical_mcp_clients, vertical)
+        if client is None:
+            raise HTTPException(status_code=404, detail="Vertical not found.")
+
+        uri = f"vertical://{vertical}/{resource_name}"
+        try:
+            contents = await client.read_resource(uri)
+        except Exception as exc:
+            raise HTTPException(status_code=404, detail="Resource not found.") from exc
+
+        return {
+            "vertical": vertical,
+            "uri": uri,
+            "contents": [content.model_dump(mode="json") for content in contents],
+        }
+
     @api_router.post("/debug/sandbox/invoke")
-    def debug_sandbox_invoke(request: SandboxInvokeRequest) -> dict[str, Any]:
+    async def debug_sandbox_invoke(request: SandboxInvokeRequest) -> dict[str, Any]:
         request_id = request.request_id or str(uuid4())
         route = catalog.get_route(request.tool_name)
         if request.vertical is not None and (route is None or route.vertical != request.vertical):
             result = tool_not_found(request.tool_name)
         else:
-            result = router.invoke(
+            result = await router.invoke(
                 request.tool_name,
                 request.arguments,
                 request_id=request_id,
@@ -109,3 +143,22 @@ def create_debug_router(
         }
 
     return api_router
+
+
+def _filter_vertical_clients(
+    clients: list[VerticalMCPClient],
+    vertical: str | None,
+) -> list[VerticalMCPClient]:
+    if vertical is None:
+        return clients
+    return [client for client in clients if client.name == vertical]
+
+
+def _get_vertical_client(
+    clients: list[VerticalMCPClient],
+    vertical: str,
+) -> VerticalMCPClient | None:
+    for client in clients:
+        if client.name == vertical:
+            return client
+    return None
