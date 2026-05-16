@@ -1,3 +1,5 @@
+"""Build the curated public catalog from internal vertical candidates."""
+
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TypeAlias
@@ -7,7 +9,8 @@ from app.models.catalog import CatalogSnapshot
 from app.models.tools import CandidateTool, PublicTool, ToolRoute
 from app.models.validation import ToolValidationStatus, ValidationIssue, ValidationReport, ValidationResult
 from app.validation.conformance import ToolConformanceValidator
-from app.verticals.base import VerticalService
+from app.vertical_mcp.adapters import list_candidate_tools
+from app.vertical_mcp.base import VerticalMCPClient
 
 ToolMappingKey: TypeAlias = tuple[str, str, str]
 
@@ -53,9 +56,17 @@ class CatalogBuilder:
         self._version_provider = version_provider
         self._approved_mappings = dict(approved_mappings or DEFAULT_APPROVED_PUBLIC_MAPPINGS)
 
-    def build(self, verticals: Iterable[VerticalService]) -> CatalogSnapshot:
-        """Collect, validate, map, and publish accepted vertical tool candidates."""
-        candidates = self._collect_candidates(verticals)
+    async def build_from_mcp_clients(
+        self,
+        clients: Iterable[VerticalMCPClient],
+    ) -> CatalogSnapshot:
+        """Collect, validate, map, and publish accepted internal MCP tool candidates."""
+        candidates: list[CandidateTool] = []
+        for client in clients:
+            candidates.extend(await list_candidate_tools(client))
+        return self.build_from_candidates(candidates)
+
+    def build_from_candidates(self, candidates: list[CandidateTool]) -> CatalogSnapshot:
         conformance_report = self._validator.validate_all(candidates)
         metadata = self._version_provider.get_metadata()
 
@@ -93,13 +104,6 @@ class CatalogBuilder:
             routes=routes,
             validation_report=ValidationReport(results=final_results),
         )
-
-    def _collect_candidates(self, verticals: Iterable[VerticalService]) -> list[CandidateTool]:
-        candidates: list[CandidateTool] = []
-        for vertical in verticals:
-            candidates.extend(vertical.list_tools())
-        return candidates
-
 
 def _mapping_key(candidate: CandidateTool) -> ToolMappingKey:
     return (candidate.vertical, candidate.upstream_tool, candidate.internal_version)
