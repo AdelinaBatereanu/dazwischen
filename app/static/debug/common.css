@@ -89,6 +89,7 @@ h2 {
 }
 
 input,
+select,
 button {
   box-sizing: border-box;
   border-radius: 8px;
@@ -135,6 +136,52 @@ pre {
 
 .error {
   color: #fca5a5;
+}
+
+.muted {
+  color: #9ca3af;
+}
+
+.resource-list {
+  display: grid;
+  gap: 18px;
+}
+
+.resource-vertical {
+  display: grid;
+  gap: 10px;
+}
+
+.resource-vertical h2 {
+  margin: 0;
+}
+
+.resource-card {
+  border: 1px solid #374151;
+  border-radius: 10px;
+  background: #111827;
+  padding: 12px;
+}
+
+.resource-card summary {
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  font-weight: 700;
+}
+
+.resource-card summary code {
+  color: #93c5fd;
+  font-weight: 500;
+}
+
+.resource-card pre {
+  border: 1px solid #374151;
+  border-radius: 8px;
+  background: #0b1220;
+  padding: 12px;
+  max-height: 360px;
+  overflow: auto;
 }
 
 @media (max-width: 820px) {
