@@ -10,7 +10,12 @@ from app.catalog.registry import CatalogRegistry
 from app.catalog.versioning import CatalogVersionProvider
 from app.routing.router import ToolRouter
 from app.validation.conformance import ToolConformanceValidator
-from app.vertical_mcp.adapters import InProcessVerticalMCPClient, list_candidate_tools
+from app.vertical_mcp.adapters import (
+    InProcessVerticalMCPClient,
+    VerticalMCPAdapterError,
+    list_candidate_tools,
+    mcp_tool_to_candidate,
+)
 from app.vertical_mcp.insurance import create_insurance_server
 from app.vertical_mcp.internet import create_internet_server
 from app.vertical_mcp.mobility import create_mobility_server
@@ -87,6 +92,33 @@ async def test_mcp_tool_descriptors_adapt_to_candidate_tools() -> None:
         "properties": {"options": {"type": "array"}},
     }
     assert candidates[1].safe_to_expose is False
+
+
+def test_adapter_rejects_missing_or_mistyped_required_vertical_metadata() -> None:
+    base_tool = {
+        "name": "search",
+        "description": "Search available mobility options for a requested trip.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"origin": {"type": "string"}},
+            "required": ["origin"],
+        },
+    }
+
+    missing_version = types.Tool(
+        **base_tool,
+        _meta={"vertical/safeToExpose": True},
+    )
+    wrong_safe_type = types.Tool(
+        **base_tool,
+        _meta={"vertical/internalVersion": "1.0", "vertical/safeToExpose": "yes"},
+    )
+
+    with pytest.raises(VerticalMCPAdapterError, match="vertical/internalVersion"):
+        mcp_tool_to_candidate("mobility", missing_version)
+
+    with pytest.raises(VerticalMCPAdapterError, match="vertical/safeToExpose"):
+        mcp_tool_to_candidate("mobility", wrong_safe_type)
 
 
 @pytest.mark.anyio

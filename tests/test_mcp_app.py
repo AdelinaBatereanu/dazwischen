@@ -172,6 +172,18 @@ def test_mcp_adapter_returns_safe_structured_error_for_invalid_call() -> None:
     assert error["message"]
 
 
+def test_mcp_adapter_returns_safe_structured_error_for_unknown_tool() -> None:
+    server = create_server()
+
+    result = call_mcp_tool(server, "book", {"option_id": "mob-train-001"})
+
+    assert result.isError is True
+    assert result.structuredContent is not None
+    error = result.structuredContent["error"]
+    assert error["code"] == "TOOL_NOT_FOUND"
+    assert error["details"] == {"tool": "book"}
+
+
 def test_mcp_adapter_vertical_filter_limits_listed_and_callable_tools() -> None:
     server = create_server()
     token = _VERTICAL_FILTER.set("mobility")

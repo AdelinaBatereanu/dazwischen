@@ -177,6 +177,25 @@ def test_sandbox_lists_only_accepted_tools_and_invokes_through_router() -> None:
     assert body["result"]["data"]["upstream_tool"] == "search"
 
 
+def test_sandbox_vertical_filter_blocks_other_vertical_invocation() -> None:
+    app = create_app()
+
+    with TestClient(app) as client:
+        result = client.post(
+            "/debug/sandbox/invoke",
+            json={
+                "tool_name": "compare_internet_plans",
+                "arguments": {"address": "Main Street 1", "postal_code": "80331"},
+                "vertical": "mobility",
+            },
+        )
+
+    assert result.status_code == 200
+    body = result.json()
+    assert body["result"]["ok"] is False
+    assert body["result"]["error"]["code"] == "TOOL_NOT_FOUND"
+
+
 def test_verticals_endpoint_reports_catalog_and_observability_status() -> None:
     app = create_app()
 
