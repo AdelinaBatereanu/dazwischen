@@ -1,8 +1,5 @@
 # Dazwischen
 
-> **NOTE**
-> Remove `uv.lock` from `.gitignore` before deploying
-
 ## Status
 
 Project skeleton only. Implementation will be added in later phases.
