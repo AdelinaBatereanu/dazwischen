@@ -270,5 +270,5 @@ More detailed notes are available in `docs/`:
 
 ## 🔗 Review links
 
-[Public deployment URL](https://huggingface.co/spaces/adelinabatereanu/dazwischen)  
+[Public deployment URL](https://adelinabatereanu-dazwischen.hf.space/sandbox)  
 [Demo video URL](https://www.youtube.com/watch?v=ToLgsJfJ-JM)
