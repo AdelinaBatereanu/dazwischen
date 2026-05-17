@@ -1,4 +1,8 @@
-# Python bytecode and caches
+# Git
+.git
+.gitignore
+
+# Python caches
 __pycache__/
 *.py[cod]
 *$py.class
@@ -23,11 +27,7 @@ dist/
 .eggs/
 *.egg
 
-# Python tooling
-.python-version
-.uv-cache/
-
-# Environment and local secrets
+# Local environment and secrets
 .env
 .env.*
 !.env.example
@@ -49,6 +49,12 @@ Thumbs.db
 *.swo
 *~
 
-# Developer files
-todo.md 
+# Project docs/assets not needed in runtime image
+docs/
+tests/
+resources.pdf
 PLAN.md
+PROJECT.md
+CHALLENGE_CRITERIA.md
+VIDEO_SCRIPT.md
+AGENT.md
